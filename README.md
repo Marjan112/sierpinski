@@ -4,7 +4,7 @@
 
 ## Quickstart
 ```sh
-make
+gcc -o main main.c -lm -lX11 -lraylib
 ./main
 ```
 
