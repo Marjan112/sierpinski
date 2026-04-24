@@ -2,7 +2,6 @@
 #include <raymath.h>
 #include <time.h>
 
-#define MAX_POINTS 100000
 #define POINTS_PER_FRAME 1000
 
 int main(void) {
@@ -11,46 +10,81 @@ int main(void) {
     SetTargetFPS(60);
     SetRandomSeed(time(NULL));
 
+    Camera2D camera = {0};
+    camera.zoom = 1;
+
     const Color LIGHT_BLUE = GetColor(0x89b4faff);
     const Color CHARCOAL_GREY = GetColor(0x1e1e2eff);
 
     const int w = GetScreenWidth();
     const int h = GetScreenHeight();
 
+    // CCW
     const Vector2 p[] = {
-        {w * 0.5, h * 0.2},
-        {w * 0.2, h * 0.8},
-        {w * 0.8, h * 0.8}
+        {w * 0.5f, h * 0.2f},
+        {w * 0.2f, h * 0.8f},
+        {w * 0.8f, h * 0.8f}
     };
 
-    Vector2 vs[MAX_POINTS] = {0};
-    size_t vs_count = 0;
-
-    Vector2 v = p[0];
+    Vector2 point;
+    Vector2 seed = p[0];
 
     while(!WindowShouldClose()) {
-        if(vs_count < MAX_POINTS) {
-            for(size_t i = 0; i < POINTS_PER_FRAME; ++i) {
-                int p_index = GetRandomValue(0, 2);
-                v = Vector2Lerp(v, p[p_index], 0.5);
-                vs[vs_count++] = v;
-            }
+        if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            Vector2 delta = GetMouseDelta();
+            delta = Vector2Scale(delta, -1/camera.zoom);
+            camera.target = Vector2Add(camera.target, delta);
         }
 
-        BeginDrawing();
-        ClearBackground(CHARCOAL_GREY);
+        const float wheel = GetMouseWheelMove();
+        if(wheel != 0) {
+            Vector2 mouse_world_pos = GetScreenToWorld2D(GetMousePosition(), camera);
+            camera.offset = GetMousePosition();
+            camera.target = mouse_world_pos;
+            camera.zoom *= (1 + (wheel * 0.05f));
+            camera.zoom = Clamp(camera.zoom, 1, 30000);
+        }
 
-        DrawText("Press 'c' to clear the points", w * 0.01f, h * 0.01f, 30, LIGHT_BLUE);
-        DrawText(TextFormat("Points: %d/%d", vs_count, MAX_POINTS), w * 0.01f, h * 0.05f, 30, LIGHT_BLUE);
-        DrawFPS(w * 0.01f, h * 0.10f);
+        Vector2 top_left = GetScreenToWorld2D(CLITERAL(Vector2){0, 0}, camera);
+        Vector2 bottom_right = GetScreenToWorld2D(CLITERAL(Vector2){GetScreenWidth(), GetScreenHeight()}, camera);
 
-        if(IsKeyReleased(KEY_C)) vs_count = 0;
+        Rectangle view_area = {
+            top_left.x,
+            top_left.y,
+            bottom_right.x - top_left.x,
+            bottom_right.y - top_left.y
+        };
 
-        DrawTriangleLines(p[0], p[1], p[2], LIGHT_BLUE);
+        for(int i = 0; i < 100; ++i) seed = Vector2Lerp(seed, p[GetRandomValue(0, 2)], 0.5f);
 
-        for(size_t i = 0; i < vs_count; ++i) DrawCircleV(vs[i], 0.5, LIGHT_BLUE);
+        if(IsKeyDown(KEY_Z)) camera.zoom = 1;
+        if(IsKeyDown(KEY_S)) TakeScreenshot("screenshot.png");
 
-        EndDrawing();
+        BeginDrawing(); {
+            ClearBackground(CHARCOAL_GREY);
+
+            BeginMode2D(camera);
+            DrawTriangleLines(p[0], p[1], p[2], LIGHT_BLUE);
+            EndMode2D();
+
+            Vector2 ephemeral = seed;
+            size_t points_to_draw = (POINTS_PER_FRAME * camera.zoom);
+            points_to_draw = Clamp(points_to_draw, POINTS_PER_FRAME, 2000000);
+            for(size_t i = 0; i < points_to_draw; ++i) {
+                ephemeral = Vector2Lerp(ephemeral, p[GetRandomValue(0, 2)], 0.5f);
+                if(CheckCollisionPointRec(ephemeral, view_area)) {
+                    Vector2 screen_pos = GetWorldToScreen2D(ephemeral, camera);
+                    DrawCircleV(screen_pos, 1.5f, LIGHT_BLUE);
+                }
+            }
+
+            seed = ephemeral;
+
+            DrawText("Press 'z' to reset the zoom", w * 0.01f, h * 0.03f, 30, LIGHT_BLUE);
+            DrawText("Press 's' for screenshot", w * 0.01f, h * 0.07f, 30, LIGHT_BLUE);
+            DrawFPS(w * 0.01f, h * 0.11f);
+            DrawText(TextFormat("Zoom: %.2fx", camera.zoom), w * 0.01f, h * 0.15f, 30, LIGHT_BLUE);
+        } EndDrawing();
     }
 
     CloseWindow();
